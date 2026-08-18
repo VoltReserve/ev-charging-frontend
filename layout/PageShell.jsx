@@ -1,4 +1,19 @@
+import { useState } from 'react'
+import { useAuth } from '../src/context/AuthContext'
+import UserProfilePanel from '../components/UserProfilePanel'
+
 const PageShell = ({ title, children, showSteps = false, stepsSlot, wide = false }) => {
+  const { user, isUser } = useAuth()
+  const [profileOpen, setProfileOpen] = useState(false)
+
+  const initials = (user?.fullName || '')
+    .trim()
+    .split(' ')
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase() || '?'
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div
@@ -17,9 +32,23 @@ const PageShell = ({ title, children, showSteps = false, stepsSlot, wide = false
             <p className="mono text-green-600 text-xs tracking-widest uppercase">EV Charging</p>
             <h1 className="text-gray-900 text-base font-semibold leading-tight">{title}</h1>
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            <div className="pulse-dot" />
-            <span className="text-green-700 text-xs mono">Live</span>
+          <div className="ml-auto flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="pulse-dot" />
+              <span className="text-green-700 text-xs mono">Live</span>
+            </div>
+
+            {isUser && (
+              <button
+                type="button"
+                onClick={() => setProfileOpen(true)}
+                className="profile-avatar-btn w-8 h-8 rounded-full bg-green-600 flex items-center justify-center text-white text-xs font-bold shrink-0 hover:bg-green-700 transition-colors"
+                title={user?.fullName || 'My profile'}
+                aria-label="Open profile"
+              >
+                {initials}
+              </button>
+            )}
           </div>
         </div>
 
@@ -27,8 +56,10 @@ const PageShell = ({ title, children, showSteps = false, stepsSlot, wide = false
 
         {children}
 
-        <p className="text-center text-gray-400 text-xs mono mt-4">Kochi Smart EV Network · 2025</p>
+        <p className="text-center text-gray-400 text-xs mono mt-4">Kochi Smart EV Network · 2026</p>
       </div>
+
+      {profileOpen && <UserProfilePanel onClose={() => setProfileOpen(false)} />}
     </div>
   )
 }

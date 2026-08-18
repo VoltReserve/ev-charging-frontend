@@ -1,26 +1,25 @@
 import { useState } from 'react'
 import { useNetwork } from '../../src/context/NetworkContext'
-import {
-  STATION_STATUSES,
-  CHARGER_STATUSES,
-  CHARGER_TYPES,
-} from '../../data/evNetwork'
+import { adminApi, getErrorMessage } from '../../src/lib/api'
 import Modal from './Modal'
 
-const emptyStation = { name: '', status: 'open', id: '' }
+const STATION_STATUSES = ['Active', 'Inactive']
+const CHARGER_STATUSES = ['Available', 'Busy', 'Maintenance', 'Not Working']
+const CHARGER_TYPES = ['DC', 'AC']
+
+const emptyStation = { name: '', status: 'Active' }
 
 const emptyCharger = {
-  id: '',
-  name: '',
-  type: 'DC',
-  power: '60kW',
-  connector: 'CCS2',
-  status: 'available',
+  chargerCode: '',
+  chargerType: 'DC',
+  powerRating: '60kW',
+  slotDuration: 150,
+  status: 'Available',
 }
 
 const statusBadge = (status) => {
-  if (status === 'open' || status === 'available') return 'admin-badge-green'
-  if (status === 'closed') return 'admin-badge-amber'
+  if (status === 'Active' || status === 'Available') return 'admin-badge-green'
+  if (status === 'Inactive' || status === 'Busy' || status === 'Maintenance') return 'admin-badge-amber'
   return 'admin-badge-red'
 }
 
@@ -34,16 +33,19 @@ const Field = ({ label, children }) => (
 const StationManager = () => {
   const {
     network,
+    loading,
+    error: loadError,
     addStation,
     updateStation,
-    deleteStation,
+    updateStationStatus,
     addCharger,
     updateCharger,
-    deleteCharger,
+    updateChargerStatus,
   } = useNetwork()
 
   const [expandedId, setExpandedId] = useState(null)
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const [stationModal, setStationModal] = useState(null)
   const [stationForm, setStationForm] = useState(emptyStation)
@@ -57,6 +59,7 @@ const StationManager = () => {
     setStationForm(emptyStation)
     setChargerForm(emptyCharger)
     setError('')
+    setSaving(false)
   }
 
   const openAddStation = () => {
@@ -66,7 +69,7 @@ const StationManager = () => {
   }
 
   const openEditStation = (station) => {
-    setStationForm({ name: station.name, status: station.status, id: station.id })
+    setStationForm({ name: station.name, status: station.status })
     setError('')
     setStationModal({ mode: 'edit', id: station.id })
   }
@@ -78,16 +81,17 @@ const StationManager = () => {
     setChargerModal({ mode: 'add', stationId: station.id, stationName: station.name })
   }
 
-  const openEditCharger = (station, charger) => {
+  const chargerToForm = (charger) => ({
+    chargerCode: charger.chargerCode || charger.name || '',
+    chargerType: charger.chargerType || charger.type || 'DC',
+    powerRating: charger.powerRating || charger.power || '60kW',
+    slotDuration: charger.slotDuration || ((charger.chargerType || charger.type) === 'AC' ? 240 : 150),
+    status: charger.status || 'Available',
+  })
+
+  const openEditCharger = async (station, charger) => {
     setExpandedId(station.id)
-    setChargerForm({
-      id: charger.id,
-      name: charger.name,
-      type: charger.type,
-      power: charger.power,
-      connector: charger.connector,
-      status: charger.status,
-    })
+    setChargerForm(chargerToForm(charger))
     setError('')
     setChargerModal({
       mode: 'edit',
@@ -95,9 +99,19 @@ const StationManager = () => {
       stationName: station.name,
       chargerId: charger.id,
     })
+
+    try {
+      const response = await adminApi.getCharger(charger.id)
+      const data = response.data?.charger || response.data?.data || response.data
+      if (data?.id || data?._id || data?.chargerCode) {
+        setChargerForm(chargerToForm(data))
+      }
+    } catch (err) {
+      setError(getErrorMessage(err, 'Could not load latest charger details'))
+    }
   }
 
-  const handleStationSubmit = (e) => {
+  const handleStationSubmit = async (e) => {
     e.preventDefault()
     setError('')
     if (!stationForm.name.trim()) {
@@ -105,48 +119,54 @@ const StationManager = () => {
       return
     }
 
-    if (stationModal?.mode === 'edit') {
-      updateStation(stationModal.id, {
-        name: stationForm.name.trim(),
-        status: stationForm.status,
-      })
-    } else {
-      const ok = addStation({
-        name: stationForm.name.trim(),
-        status: stationForm.status,
-        id: stationForm.id.trim() || undefined,
-      })
-      if (!ok) {
-        setError('A station with this ID already exists')
-        return
+    setSaving(true)
+    try {
+      if (stationModal?.mode === 'edit') {
+        await updateStation(stationModal.id, {
+          name: stationForm.name.trim(),
+          status: stationForm.status,
+        })
+      } else {
+        await addStation({
+          name: stationForm.name.trim(),
+          status: stationForm.status,
+        })
       }
+      closeModals()
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to save station'))
+      setSaving(false)
     }
-    closeModals()
   }
 
-  const handleChargerSubmit = (e) => {
+  const handleChargerSubmit = async (e) => {
     e.preventDefault()
     setError('')
-    if (!chargerForm.id.trim() || !chargerForm.name.trim()) {
-      setError('Charger ID and name are required')
+    if (!chargerForm.chargerCode.trim()) {
+      setError('Charger code is required')
       return
     }
 
     const payload = {
-      id: chargerForm.id.trim(),
-      name: chargerForm.name.trim(),
-      type: chargerForm.type,
-      power: chargerForm.power.trim(),
-      connector: chargerForm.connector.trim(),
+      chargerCode: chargerForm.chargerCode.trim(),
+      chargerType: chargerForm.chargerType,
+      powerRating: chargerForm.powerRating.trim(),
+      slotDuration: Number(chargerForm.slotDuration),
       status: chargerForm.status,
     }
 
-    if (chargerModal?.mode === 'edit') {
-      updateCharger(chargerModal.stationId, chargerModal.chargerId, payload)
-    } else {
-      addCharger(chargerModal.stationId, payload)
+    setSaving(true)
+    try {
+      if (chargerModal?.mode === 'edit') {
+        await updateCharger(chargerModal.stationId, chargerModal.chargerId, payload)
+      } else {
+        await addCharger(chargerModal.stationId, payload)
+      }
+      closeModals()
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to save charger'))
+      setSaving(false)
     }
-    closeModals()
   }
 
   return (
@@ -158,13 +178,18 @@ const StationManager = () => {
         </button>
       </div>
 
-      {network.length === 0 && (
+      {loadError && <p className="err-text text-sm mb-4">{loadError}</p>}
+      {loading && network.length === 0 && (
+        <p className="text-gray-400 text-sm text-center py-8">Loading stations...</p>
+      )}
+      {!loading && network.length === 0 && (
         <p className="text-gray-400 text-sm text-center py-8">No stations yet. Add one to get started.</p>
       )}
 
       <div className="space-y-3">
         {network.map((station) => {
           const isOpen = expandedId === station.id
+          const nextStatus = station.status === 'Active' ? 'Inactive' : 'Active'
 
           return (
             <div key={station.id} className="admin-panel rounded-xl overflow-hidden">
@@ -190,14 +215,13 @@ const StationManager = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      if (window.confirm('Delete station and all chargers?')) {
-                        deleteStation(station.id)
-                        if (expandedId === station.id) setExpandedId(null)
+                      if (window.confirm(`${nextStatus === 'Inactive' ? 'Deactivate' : 'Activate'} this station?`)) {
+                        updateStationStatus(station.id, nextStatus)
                       }
                     }}
-                    className="admin-btn-sm admin-btn-danger flex-1 sm:flex-none"
+                    className={`admin-btn-sm flex-1 sm:flex-none ${nextStatus === 'Inactive' ? 'admin-btn-danger' : ''}`}
                   >
-                    Delete
+                    {nextStatus === 'Inactive' ? 'Deactivate' : 'Activate'}
                   </button>
                 </div>
               </div>
@@ -225,27 +249,29 @@ const StationManager = () => {
                           className="flex flex-col sm:flex-row sm:items-center gap-3 bg-white border border-gray-200 rounded-lg px-3 py-3"
                         >
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900">{charger.name}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">{charger.power} · {charger.connector}</p>
+                            <p className="text-sm font-medium text-gray-900">{charger.chargerCode || charger.name}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {charger.powerRating || charger.power}
+                              {charger.slotDuration ? ` · ${charger.slotDuration} min` : ''}
+                            </p>
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
                             <span className={`mono text-xs px-2 py-0.5 rounded ${charger.type === 'DC' ? 'tag-dc' : 'tag-ac'}`}>
                               {charger.type}
                             </span>
                             <span className={`admin-badge ${statusBadge(charger.status)}`}>{charger.status}</span>
+                            <select
+                              className="admin-btn-sm"
+                              value={charger.status}
+                              onChange={(e) => updateChargerStatus(station.id, charger.id, e.target.value)}
+                              aria-label={`Status for ${charger.chargerCode || charger.name}`}
+                            >
+                              {CHARGER_STATUSES.map((s) => (
+                                <option key={s} value={s}>{s}</option>
+                              ))}
+                            </select>
                             <button type="button" onClick={() => openEditCharger(station, charger)} className="admin-btn-sm">
                               Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (window.confirm('Delete this charger?')) {
-                                  deleteCharger(station.id, charger.id)
-                                }
-                              }}
-                              className="admin-btn-sm admin-btn-danger"
-                            >
-                              Delete
                             </button>
                           </div>
                         </div>
@@ -266,7 +292,7 @@ const StationManager = () => {
       >
         {error && stationModal && <p className="err-text text-sm mb-3">{error}</p>}
         <form onSubmit={handleStationSubmit} className="space-y-4">
-          <Field label="Name">
+          <Field label="Station name">
             <input
               className="inp w-full rounded-xl px-4 py-2.5 text-sm"
               value={stationForm.name}
@@ -275,16 +301,6 @@ const StationManager = () => {
               required
             />
           </Field>
-          {stationModal?.mode === 'add' && (
-            <Field label="ID (optional)">
-              <input
-                className="inp w-full rounded-xl px-4 py-2.5 text-sm mono"
-                value={stationForm.id}
-                onChange={(e) => setStationForm({ ...stationForm, id: e.target.value })}
-                placeholder="auto from name"
-              />
-            </Field>
-          )}
           <Field label="Status">
             <select
               className="inp w-full rounded-xl px-4 py-2.5 text-sm"
@@ -300,8 +316,8 @@ const StationManager = () => {
             <button type="button" onClick={closeModals} className="btn-ghost rounded-xl px-5 py-2.5 text-sm w-full sm:w-auto">
               Cancel
             </button>
-            <button type="submit" className="btn-green rounded-xl px-5 py-2.5 text-sm font-semibold w-full sm:flex-1">
-              {stationModal?.mode === 'edit' ? 'Save changes' : 'Add station'}
+            <button type="submit" disabled={saving} className="btn-green rounded-xl px-5 py-2.5 text-sm font-semibold w-full sm:flex-1">
+              {saving ? 'Saving...' : stationModal?.mode === 'edit' ? 'Save changes' : 'Add station'}
             </button>
           </div>
         </form>
@@ -318,21 +334,12 @@ const StationManager = () => {
       >
         {error && chargerModal && <p className="err-text text-sm mb-3">{error}</p>}
         <form onSubmit={handleChargerSubmit} className="space-y-4">
-          <Field label="Charger ID">
+          <Field label="Charger code">
             <input
               className="inp w-full rounded-xl px-4 py-2.5 text-sm mono"
-              value={chargerForm.id}
-              onChange={(e) => setChargerForm({ ...chargerForm, id: e.target.value })}
-              disabled={chargerModal?.mode === 'edit'}
-              placeholder="INFCMD001-G1"
-              required
-            />
-          </Field>
-          <Field label="Display name">
-            <input
-              className="inp w-full rounded-xl px-4 py-2.5 text-sm"
-              value={chargerForm.name}
-              onChange={(e) => setChargerForm({ ...chargerForm, name: e.target.value })}
+              value={chargerForm.chargerCode}
+              onChange={(e) => setChargerForm({ ...chargerForm, chargerCode: e.target.value })}
+              placeholder="CH001"
               required
             />
           </Field>
@@ -340,8 +347,15 @@ const StationManager = () => {
             <Field label="Type">
               <select
                 className="inp w-full rounded-xl px-4 py-2.5 text-sm"
-                value={chargerForm.type}
-                onChange={(e) => setChargerForm({ ...chargerForm, type: e.target.value })}
+                value={chargerForm.chargerType}
+                onChange={(e) => {
+                  const chargerType = e.target.value
+                  setChargerForm({
+                    ...chargerForm,
+                    chargerType,
+                    slotDuration: chargerType === 'DC' ? 150 : 240,
+                  })
+                }}
               >
                 {CHARGER_TYPES.map((t) => (
                   <option key={t} value={t}>{t}</option>
@@ -361,20 +375,23 @@ const StationManager = () => {
             </Field>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Power">
+            <Field label="Power rating">
               <input
                 className="inp w-full rounded-xl px-4 py-2.5 text-sm"
-                value={chargerForm.power}
-                onChange={(e) => setChargerForm({ ...chargerForm, power: e.target.value })}
+                value={chargerForm.powerRating}
+                onChange={(e) => setChargerForm({ ...chargerForm, powerRating: e.target.value })}
                 placeholder="60kW"
+                required
               />
             </Field>
-            <Field label="Connector">
+            <Field label="Slot duration (minutes)">
               <input
+                type="number"
+                min="1"
                 className="inp w-full rounded-xl px-4 py-2.5 text-sm"
-                value={chargerForm.connector}
-                onChange={(e) => setChargerForm({ ...chargerForm, connector: e.target.value })}
-                placeholder="CCS2"
+                value={chargerForm.slotDuration}
+                onChange={(e) => setChargerForm({ ...chargerForm, slotDuration: e.target.value })}
+                required
               />
             </Field>
           </div>
@@ -382,8 +399,8 @@ const StationManager = () => {
             <button type="button" onClick={closeModals} className="btn-ghost rounded-xl px-5 py-2.5 text-sm w-full sm:w-auto">
               Cancel
             </button>
-            <button type="submit" className="btn-green rounded-xl px-5 py-2.5 text-sm font-semibold w-full sm:flex-1">
-              {chargerModal?.mode === 'edit' ? 'Save changes' : 'Add charger'}
+            <button type="submit" disabled={saving} className="btn-green rounded-xl px-5 py-2.5 text-sm font-semibold w-full sm:flex-1">
+              {saving ? 'Saving...' : chargerModal?.mode === 'edit' ? 'Save changes' : 'Add charger'}
             </button>
           </div>
         </form>

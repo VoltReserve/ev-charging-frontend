@@ -1,14 +1,18 @@
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '../../src/context/AuthContext'
 
 const TITLES = {
   '/admin': 'Dashboard',
   '/admin/network': 'Stations & Chargers',
   '/admin/bookings': 'Bookings',
+  '/admin/reports': 'Reports',
   '/admin/settings': 'Settings',
 }
 
 const Topbar = ({ onMenuOpen }) => {
   const { pathname } = useLocation()
+  const navigate = useNavigate()
+  const { admin, logout } = useAuth()
   const title = TITLES[pathname] ?? 'Admin'
 
   return (
@@ -26,9 +30,20 @@ const Topbar = ({ onMenuOpen }) => {
         </button>
         <h1 className="text-gray-900 text-base sm:text-lg font-semibold truncate">{title}</h1>
       </div>
-      <div className="flex items-center gap-2 shrink-0">
-        <div className="pulse-dot" />
-        <span className="text-green-700 text-xs mono sm:inline">Live</span>
+      <div className="flex items-center gap-3 shrink-0">
+        <span className="hidden sm:inline text-gray-500 text-xs truncate max-w-[160px]">
+          {admin?.email || admin?.name || 'Admin'}
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            logout()
+            navigate('/admin-login', { replace: true })
+          }}
+          className="admin-btn-sm"
+        >
+          Log out
+        </button>
       </div>
     </header>
   )

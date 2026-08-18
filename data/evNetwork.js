@@ -118,7 +118,11 @@ export const getStationFromNetwork = (network, stationId) =>
 export const getChargersForStationFromNetwork = (network, stationId) => {
   const station = network.find((s) => s.id === stationId)
   if (!station) return []
-  return station.chargers.map(({ bookings: _b, ...charger }) => charger)
+  return station.chargers.map((charger) => {
+    const { bookings, ...rest } = charger
+    void bookings
+    return rest
+  })
 }
 
 export const getChargerFromNetwork = (network, stationId, chargerId) =>

@@ -4,6 +4,7 @@ const NAV = [
   { to: '/admin', label: 'Dashboard', end: true },
   { to: '/admin/network', label: 'Stations & Chargers' },
   { to: '/admin/bookings', label: 'Bookings' },
+  { to: '/admin/reports', label: 'Reports' },
   { to: '/admin/settings', label: 'Settings' },
 ]
 

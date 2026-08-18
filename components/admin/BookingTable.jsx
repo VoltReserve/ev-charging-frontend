@@ -32,10 +32,10 @@ const BookingTable = ({ rows, onDelete }) => (
             <td>{row.customerName}</td>
             <td className="mono text-xs">{row.carno}</td>
             <td className="text-right">
-              {row.bookingIndex != null && (
+              {row.id && (
                 <button
                   type="button"
-                  onClick={() => onDelete(row.stationId, row.chargerId, row.bookingIndex)}
+                  onClick={() => onDelete(row.id)}
                   className="admin-btn-sm admin-btn-danger"
                 >
                   Delete

@@ -1,140 +1,276 @@
-import { createContext, useContext, useMemo, useState } from 'react'
-import {
-  DEFAULT_EV_NETWORK,
-  getAllBookingsFlat,
-  getBookingsForChargerOnDateFromNetwork,
-  getChargerFromNetwork,
-  getChargersForStationFromNetwork,
-  getStationFromNetwork,
-  getStationsFromNetwork,
-  slugify,
-} from '../../data/evNetwork'
-
-const STORAGE_KEY = 'ev-network-v1'
-
-const loadNetwork = () => {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) return JSON.parse(saved)
-  } catch {
-    /* use default */
-  }
-  return structuredClone(DEFAULT_EV_NETWORK)
-}
+/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-hooks/exhaustive-deps */
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { adminApi, getErrorMessage, unwrapList, userApi } from '../lib/api'
+import { useAuth } from './AuthContext'
 
 const NetworkContext = createContext(null)
 
 export const NetworkProvider = ({ children }) => {
-  const [network, setNetwork] = useState(loadNetwork)
+  const { role, isAdmin, isUser } = useAuth()
+  const [stations, setStations] = useState([])
+  const [chargersByStation, setChargersByStation] = useState({})
+  const [adminChargers, setAdminChargers] = useState([])
+  const [allBookings, setAllBookings] = useState([])
+  const [dashboard, setDashboard] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const persist = (next) => {
-    setNetwork(next)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  const normalizeStation = (station) => ({
+    id: String(station._id || station.id || ''),
+    name: station.stationName || station.name || 'Unnamed station',
+    status: station.status || 'Inactive',
+    guns: station.chargersCount ?? station.guns ?? 0,
+    chargers: station.chargers ?? [],
+  })
+
+  const normalizeCharger = (charger) => ({
+    id: String(charger._id || charger.id || ''),
+    _id: charger._id || charger.id,
+    name: charger.chargerCode || charger.name || 'Unnamed charger',
+    chargerCode: charger.chargerCode || charger.name || '—',
+    type: charger.chargerType || charger.type || '—',
+    power: charger.powerRating || charger.power || '—',
+    connector: charger.connector || charger.chargerType || '—',
+    powerRating: charger.powerRating || charger.power || '—',
+    slotDuration: charger.slotDuration ?? null,
+    status: charger.status || 'Available',
+    stationId: String(
+      charger.stationId?._id ||
+      charger.stationId?.id ||
+      charger.stationId ||
+      charger.station?._id ||
+      '',
+    ),
+    stationName:
+      charger.stationId?.stationName ||
+      charger.stationId?.name ||
+      charger.station?.stationName ||
+      charger.station?.name ||
+      '',
+  })
+
+  const normalizeBooking = (booking) => ({
+    id: booking._id || booking.id,
+    ref: booking.bookingId || booking.ref || '—',
+    stationId: booking.stationId?._id || booking.stationId || '',
+    stationName: booking.stationId?.stationName || booking.stationName || '—',
+    chargerId: booking.chargerId?._id || booking.chargerId || '',
+    chargerName:
+      booking.chargerId?.chargerCode ||
+      booking.chargerName ||
+      booking.chargerId?.name ||
+      '—',
+    date: booking.bookingDate || booking.date || '—',
+    from: booking.startTime || booking.from || '—',
+    to: booking.endTime || booking.to || '—',
+    carno: booking.userId?.registrationNumber || booking.carno || '—',
+    customerName: booking.userId?.fullName || booking.customerName || '—',
+    status: booking.status || 'Upcoming',
+  })
+
+  const network = useMemo(
+    () =>
+      stations.map((station) => ({
+        id: station.id,
+        name: station.name,
+        status: station.status,
+        chargers:
+          chargersByStation[station.id]?.map((charger) => ({
+            id: charger.id,
+            name: charger.name,
+            chargerCode: charger.chargerCode,
+            type: charger.type,
+            power: charger.power,
+            powerRating: charger.powerRating,
+            slotDuration: charger.slotDuration,
+            status: charger.status,
+          })) ?? [],
+      })),
+    [stations, chargersByStation],
+  )
+
+  const refreshPublicStations = async () => {
+    const response = await userApi.getStations()
+    const rows = unwrapList(response.data, ['stations'])
+    setStations(rows.map(normalizeStation))
+    return rows
   }
 
-  const stations = useMemo(() => getStationsFromNetwork(network), [network])
-  const allBookings = useMemo(() => getAllBookingsFlat(network), [network])
+  const refreshAdminStations = async () => {
+    const response = await adminApi.getStations()
+    const rows = unwrapList(response.data, ['stations'])
+    setStations(rows.map(normalizeStation))
+    return rows
+  }
+
+  const refreshDashboard = async () => {
+    if (!isAdmin) return null
+    const response = await adminApi.getDashboard()
+    setDashboard(response.data?.data || response.data)
+    return response.data
+  }
+
+  const refreshAdminChargers = async () => {
+    if (!isAdmin) return []
+    const response = await adminApi.getChargers()
+    const rows = unwrapList(response.data, ['chargers'])
+    const normalized = rows.map(normalizeCharger)
+    setAdminChargers(normalized)
+    const grouped = normalized.reduce((acc, charger) => {
+      if (!charger.stationId) return acc
+      acc[charger.stationId] = [...(acc[charger.stationId] || []), charger]
+      return acc
+    }, {})
+    setChargersByStation(grouped)
+    return rows
+  }
+
+  const refreshMyBookings = async () => {
+    if (!isUser) return []
+    const response = await userApi.getMyBookings()
+    const rows = unwrapList(response.data, ['bookings'])
+    setAllBookings(rows.map(normalizeBooking))
+    return rows
+  }
+
+  const refreshAdminCompletedBookings = async () => {
+    if (!isAdmin) return []
+    const response = await adminApi.getCompletedBookings()
+    const rows = unwrapList(response.data, ['bookings'])
+    setAllBookings(rows.map(normalizeBooking))
+    return rows
+  }
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true)
+      setError('')
+      try {
+        if (role === 'admin') {
+          await Promise.all([
+            refreshDashboard(),
+            refreshAdminStations(),
+            refreshAdminChargers(),
+            refreshAdminCompletedBookings(),
+          ])
+        } else {
+          await refreshPublicStations()
+          if (role === 'user') {
+            await refreshMyBookings()
+          } else {
+            setAllBookings([])
+          }
+        }
+      } catch (err) {
+        setError(getErrorMessage(err, 'Failed to load data'))
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    load()
+  }, [role])
 
   const value = {
     network,
     stations,
     allBookings,
+    adminChargers,
+    dashboard,
+    loading,
+    error,
 
-    getStation: (stationId) => getStationFromNetwork(network, stationId),
-    getChargersForStation: (stationId) => getChargersForStationFromNetwork(network, stationId),
-    getCharger: (stationId, chargerId) => getChargerFromNetwork(network, stationId, chargerId),
-    getBookingsForChargerOnDate: (chargerId, dateStr) =>
-      getBookingsForChargerOnDateFromNetwork(network, chargerId, dateStr),
+    refreshPublicStations,
+    refreshAdminStations,
+    refreshAdminChargers,
+    refreshMyBookings,
+    refreshDashboard,
 
-    addStation: ({ name, status = 'open', id }) => {
-      const stationId = id || slugify(name)
-      if (network.some((s) => s.id === stationId)) return false
-      persist([...network, { id: stationId, name, status, chargers: [] }])
+    getStation: (stationId) => stations.find((station) => station.id === stationId),
+    getChargersForStation: (stationId) => chargersByStation[stationId] ?? [],
+    getCharger: (stationId, chargerId) =>
+      (chargersByStation[stationId] ?? []).find((charger) => charger.id === chargerId),
+    getBookingsForChargerOnDate: async (stationId, chargerId, dateStr) => {
+      const response = await userApi.getAvailableSlots({
+        stationId,
+        chargerId,
+        date: dateStr,
+      })
+      return response.data?.availableSlots ?? response.data?.data?.availableSlots ?? []
+    },
+    getStationDetails: async (stationId) => {
+      const response = await userApi.getStation(stationId)
+      return response.data?.data || response.data
+    },
+    loadChargersForStation: async (stationId) => {
+      const response = await userApi.getChargersByStation(stationId)
+      const rows = unwrapList(response.data, ['chargers'])
+      const normalized = rows.map(normalizeCharger)
+      setChargersByStation((prev) => ({ ...prev, [stationId]: normalized }))
+      return normalized
+    },
+    createBooking: async (payload) => {
+      const response = await userApi.createBooking(payload)
+      await refreshMyBookings()
+      const data = response.data?.data || response.data
+      return data?.booking || data
+    },
+    cancelBooking: async (bookingId) => {
+      const response = await userApi.cancelBooking(bookingId)
+      await refreshMyBookings()
+      return response.data?.data || response.data
+    },
+    addStation: async ({ name, status }) => {
+      await adminApi.createStation({ stationName: name, status })
+      await refreshAdminStations()
       return true
     },
-
-    updateStation: (stationId, updates) => {
-      persist(
-        network.map((s) => (s.id === stationId ? { ...s, ...updates } : s)),
-      )
+    updateStation: async (stationId, updates) => {
+      await adminApi.updateStation(stationId, {
+        stationName: updates.name,
+        status: updates.status,
+      })
+      await refreshAdminStations()
     },
-
-    deleteStation: (stationId) => {
-      persist(network.filter((s) => s.id !== stationId))
+    updateStationStatus: async (stationId, status) => {
+      await adminApi.updateStationStatus(stationId, status)
+      await refreshAdminStations()
     },
-
-    addCharger: (stationId, charger) => {
-      persist(
-        network.map((s) => {
-          if (s.id !== stationId) return s
-          if (s.chargers.some((c) => c.id === charger.id)) return s
-          return {
-            ...s,
-            chargers: [...s.chargers, { ...charger, bookings: charger.bookings ?? [] }],
-          }
-        }),
-      )
+    addCharger: async (stationId, charger) => {
+      await adminApi.createCharger({
+        stationId,
+        chargerCode: charger.chargerCode,
+        chargerType: charger.chargerType,
+        powerRating: charger.powerRating,
+        slotDuration: Number(charger.slotDuration),
+        status: charger.status,
+      })
+      await refreshAdminChargers()
     },
-
-    updateCharger: (stationId, chargerId, updates) => {
-      persist(
-        network.map((s) => {
-          if (s.id !== stationId) return s
-          return {
-            ...s,
-            chargers: s.chargers.map((c) =>
-              c.id === chargerId ? { ...c, ...updates } : c,
-            ),
-          }
-        }),
-      )
+    updateCharger: async (_stationId, chargerId, updates) => {
+      await adminApi.updateCharger(chargerId, {
+        chargerCode: updates.chargerCode,
+        chargerType: updates.chargerType,
+        powerRating: updates.powerRating,
+        slotDuration: Number(updates.slotDuration),
+      })
+      if (updates.status) {
+        await adminApi.updateChargerStatus(chargerId, updates.status)
+      }
+      await refreshAdminChargers()
     },
-
-    deleteCharger: (stationId, chargerId) => {
-      persist(
-        network.map((s) => {
-          if (s.id !== stationId) return s
-          return { ...s, chargers: s.chargers.filter((c) => c.id !== chargerId) }
-        }),
-      )
+    updateChargerStatus: async (_stationId, chargerId, status) => {
+      await adminApi.updateChargerStatus(chargerId, status)
+      await refreshAdminChargers()
     },
-
-    addBooking: (stationId, chargerId, booking) => {
-      persist(
-        network.map((s) => {
-          if (s.id !== stationId) return s
-          return {
-            ...s,
-            chargers: s.chargers.map((c) => {
-              if (c.id !== chargerId) return c
-              return { ...c, bookings: [...(c.bookings ?? []), booking] }
-            }),
-          }
-        }),
-      )
-    },
-
-    deleteBooking: (stationId, chargerId, bookingIndex) => {
-      persist(
-        network.map((s) => {
-          if (s.id !== stationId) return s
-          return {
-            ...s,
-            chargers: s.chargers.map((c) => {
-              if (c.id !== chargerId) return c
-              return {
-                ...c,
-                bookings: c.bookings.filter((_, i) => i !== bookingIndex),
-              }
-            }),
-          }
-        }),
-      )
-    },
-
-    resetToDefault: () => {
-      const fresh = structuredClone(DEFAULT_EV_NETWORK)
-      persist(fresh)
+    deleteBooking: async (bookingId) => {
+      await userApi.cancelBooking(bookingId)
+      if (isAdmin) {
+        await refreshAdminCompletedBookings()
+      } else {
+        await refreshMyBookings()
+      }
     },
   }
 

@@ -1,3 +1,5 @@
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import BookingLayout from '../layout/BookingLayout'
@@ -6,24 +8,19 @@ import {
   buildMonthGrid,
   format12,
   formatDayLabel,
-  getAvailableSlots,
   getBookableDates,
   getScheduleInfoBanner,
-  getWindowMins,
   toDateStr,
 } from '../utils/schedule'
-import { generateBookingRef } from '../utils/booking'
+import { getErrorMessage } from '../src/lib/api'
 
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
 const SelectSchedule = () => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { getCharger, getBookingsForChargerOnDate, addBooking } = useNetwork()
+  const { getCharger, getBookingsForChargerOnDate, createBooking, loadChargersForStation } = useNetwork()
   const { userDetails, stationId, chargerId } = location.state ?? {}
-
-  const charger = getCharger(stationId, chargerId)
-  const windowMins = charger ? getWindowMins(charger.type) : 150
 
   const today = useMemo(() => {
     const d = new Date()
@@ -38,58 +35,98 @@ const SelectSchedule = () => {
     [today, bookableDates, todayStr],
   )
 
+  const [chargerReady, setChargerReady] = useState(false)
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedSlot, setSelectedSlot] = useState(null)
+  const [availableSlots, setAvailableSlots] = useState([])
+  const [loadingSlots, setLoadingSlots] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
-  const booked = selectedDate ? getBookingsForChargerOnDate(chargerId, selectedDate) : []
-  const availableSlots = selectedDate ? getAvailableSlots(booked, windowMins) : []
+  // Ensure chargers for this station are loaded before we look one up
+  useEffect(() => {
+    if (!stationId || !chargerId) return
+    loadChargersForStation(stationId).then(() => setChargerReady(true))
+  }, [stationId, chargerId])
+
+  const charger = getCharger(stationId, chargerId)
 
   useEffect(() => {
+    if (!chargerReady) return
     if (!stationId || !chargerId || !charger) {
       navigate('/book/charger', { replace: true, state: { userDetails, stationId, chargerId } })
     }
-  }, [stationId, chargerId, charger, navigate, userDetails])
+  }, [chargerReady, stationId, chargerId, charger, navigate, userDetails])
 
   useEffect(() => {
-    setSelectedSlot(null)
-  }, [selectedDate, chargerId])
+    if (!selectedDate || !stationId || !chargerId) return
 
-  if (!charger) return null
+    setLoadingSlots(true)
+    setSubmitError('')
+    getBookingsForChargerOnDate(stationId, chargerId, selectedDate)
+      .then((slots) => {
+        setAvailableSlots(
+          slots.map((slot) => ({
+            from: slot.startTime ?? slot.from,
+            to: slot.endTime ?? slot.to,
+          })),
+        )
+      })
+      .catch((error) => {
+        setSubmitError(getErrorMessage(error, 'Failed to load available slots'))
+        setAvailableSlots([])
+      })
+      .finally(() => setLoadingSlots(false))
+  }, [selectedDate, stationId, chargerId])
+
+  if (!charger) return (
+    <BookingLayout currentStep={4} wide>
+      <p className="text-gray-500 text-sm text-center py-10">Loading charger details...</p>
+    </BookingLayout>
+  )
 
   const handleDatePick = (dateStr) => {
     if (!bookableDates.has(dateStr)) return
     setSelectedDate(dateStr)
+    setSelectedSlot(null)
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     if (!selectedDate || !selectedSlot) return
-    const bookingRef = generateBookingRef()
-    addBooking(stationId, chargerId, {
-      date: selectedDate,
-      from: selectedSlot.from,
-      to: selectedSlot.to,
-      carno: userDetails?.carNumber ?? '—',
-      customerName: userDetails?.name ?? '—',
-      ref: bookingRef,
-    })
-    navigate('/book/success', {
-      state: {
-        userDetails,
+    setSubmitting(true)
+    setSubmitError('')
+    try {
+      const booking = await createBooking({
         stationId,
         chargerId,
         bookingDate: selectedDate,
-        slot: selectedSlot,
-        bookingRef,
-      },
-    })
+        startTime: selectedSlot.from,
+      })
+      navigate('/book/success', {
+        state: {
+          userDetails,
+          stationId,
+          chargerId,
+          bookingDate: selectedDate,
+          slot: selectedSlot,
+          bookingRef: booking?.bookingId || booking?.ref || 'Booking created',
+          bookingMongoId: booking?.id || booking?._id || '',
+        },
+      })
+    } catch (error) {
+      setSubmitError(getErrorMessage(error, 'Failed to create booking'))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleBack = () => {
     navigate('/book/charger', { state: { userDetails, stationId, chargerId } })
   }
 
-  const canSubmit = Boolean(selectedDate && selectedSlot)
+  const canSubmit = Boolean(selectedDate && selectedSlot && !submitting)
+  const visibleSlots = selectedDate ? availableSlots : []
 
   return (
     <BookingLayout currentStep={4} wide>
@@ -107,6 +144,12 @@ const SelectSchedule = () => {
       </div>
 
       <form onSubmit={handleSubmit}>
+        {submitError && (
+          <div className="mb-4 rounded-xl err-box p-3">
+            <p className="err-text text-sm">{submitError}</p>
+          </div>
+        )}
+
         <div className="schedule-layout mb-5">
           <div className="card-inner rounded-xl p-4 shrink-0">
             <div className="flex items-center justify-between mb-3">
@@ -166,13 +209,16 @@ const SelectSchedule = () => {
               {!selectedDate && (
                 <p className="text-gray-500 text-xs leading-relaxed">Choose a day on the calendar.</p>
               )}
-              {selectedDate && availableSlots.length === 0 && (
+              {selectedDate && loadingSlots && (
+                <p className="text-gray-500 text-xs leading-relaxed">Loading open slots...</p>
+              )}
+              {selectedDate && !loadingSlots && visibleSlots.length === 0 && (
                 <p className="text-gray-500 text-xs leading-relaxed">
                   No open slots — fully booked for this charger.
                 </p>
               )}
               {selectedDate &&
-                availableSlots.map((slot) => (
+                visibleSlots.map((slot) => (
                   <button
                     key={slot.from}
                     type="button"
@@ -203,20 +249,11 @@ const SelectSchedule = () => {
               {!selectedDate && (
                 <p className="text-gray-500 text-xs">Select a date to see bookings.</p>
               )}
-              {selectedDate && booked.length === 0 && (
-                <p className="text-gray-500 text-xs">No bookings yet on this day.</p>
+              {selectedDate && (
+                <p className="text-gray-500 text-xs">
+                  The backend exposes free slots only on this screen. Booked-time details are not part of this user API.
+                </p>
               )}
-              {selectedDate &&
-                booked.map((b) => (
-                  <div key={`${b.from}-${b.to}`} className="booked-item">
-                    <p className="booked-item-time mono">
-                      {format12(b.from)} – {format12(b.to)}
-                    </p>
-                    <p className="booked-item-vehicle">
-                      Vehicle <strong>{b.carno || '—'}</strong>
-                    </p>
-                  </div>
-                ))}
             </div>
           </div>
         </div>
@@ -237,7 +274,7 @@ const SelectSchedule = () => {
             disabled={!canSubmit}
             className="btn-green flex-1 rounded-xl py-3 text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Confirm Booking
+            {submitting ? 'Confirming...' : 'Confirm Booking'}
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M3 8l4 4 6-7" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>

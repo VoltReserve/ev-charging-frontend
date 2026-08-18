@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import BookingLayout from '../layout/BookingLayout'
-import { isStationSelectable, getStationSubtitle } from '../data/evNetwork'
+import { useAuth } from '../src/context/AuthContext'
 import { useNetwork } from '../src/context/NetworkContext'
 
 const StatusBadge = ({ status }) => {
-  if (status === 'open') {
+  if (status === 'Active') {
     return (
       <div className="flex items-center gap-1.5">
         <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
@@ -14,7 +14,7 @@ const StatusBadge = ({ status }) => {
     )
   }
 
-  if (status === 'closed') {
+  if (status === 'Inactive') {
     return (
       <span className="text-xs px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 mono">
         Closed
@@ -46,11 +46,18 @@ const StationIcon = ({ available }) => (
 const SelectStation = () => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { stations } = useNetwork()
+  const { isUser } = useAuth()
+  const { stations, loading: networkLoading } = useNetwork()
   const userDetails = location.state?.userDetails
 
   const [selectedId, setSelectedId] = useState(location.state?.stationId ?? '')
   const [error, setError] = useState('')
+
+  const isStationSelectable = (station) => station.status === 'Active'
+  const getStationSubtitle = (station) => {
+    const count = station.guns ?? 0
+    return `${count} charger${count === 1 ? '' : 's'}`
+  }
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -63,7 +70,12 @@ const SelectStation = () => {
   }
 
   const handleBack = () => {
-    navigate('/book/details', { state: { userDetails } })
+    // Existing logged-in users have no Step 1 in their flow — go back to login
+    if (isUser) {
+      navigate('/login')
+    } else {
+      navigate('/book/details', { state: { userDetails } })
+    }
   }
 
   return (
@@ -81,6 +93,12 @@ const SelectStation = () => {
         )}
 
         <div className="space-y-3 mb-6">
+          {networkLoading && stations.length === 0 && (
+            <p className="text-gray-500 text-sm text-center py-6">Loading stations...</p>
+          )}
+          {!networkLoading && stations.length === 0 && (
+            <p className="text-gray-500 text-sm text-center py-6">No stations available.</p>
+          )}
           {stations.map((station) => {
             const selectable = isStationSelectable(station)
             const isSelected = selectedId === station.id

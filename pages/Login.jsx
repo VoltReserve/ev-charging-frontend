@@ -1,17 +1,18 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PageShell from '../layout/PageShell'
+import { useAuth } from '../src/context/AuthContext'
+import { getErrorMessage, userApi } from '../src/lib/api'
 
 const Login = () => {
   const navigate = useNavigate()
+  const { loginUser } = useAuth()
   const [step, setStep] = useState(1)
   const [mobile, setMobile] = useState('')
   const [otp, setOtp] = useState('')
   const [errors, setErrors] = useState([])
   const [resent, setResent] = useState(false)
-  const [demoOtp, setDemoOtp] = useState('')
-
-  const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000))
+  const [submitting, setSubmitting] = useState(false)
 
   const validateMobile = (value) => {
     if (!/^[6-9][0-9]{9}$/.test(value)) {
@@ -20,34 +21,81 @@ const Login = () => {
     return []
   }
 
-  const handleSendOtp = (e) => {
+  const handleSendOtp = async (e) => {
     e.preventDefault()
     const validationErrors = validateMobile(mobile)
     if (validationErrors.length) {
       setErrors(validationErrors)
       return
     }
-    setErrors([])
-    setResent(false)
-    setDemoOtp(generateOtp())
-    setStep(2)
+    setSubmitting(true)
+    try {
+      await userApi.sendOtp(mobile)
+      setErrors([])
+      setResent(false)
+      setStep(2)
+    } catch (error) {
+      setErrors([getErrorMessage(error, 'Failed to send OTP')])
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const handleVerifyOtp = (e) => {
+  const handleVerifyOtp = async (e) => {
     e.preventDefault()
     if (!/^\d{6}$/.test(otp)) {
       setErrors(['Enter a valid 6-digit OTP'])
       return
     }
-    setErrors([])
-    navigate('/book/details', { state: { mobile } })
+    setSubmitting(true)
+    try {
+      const response = await userApi.verifyOtp(mobile, otp)
+      const payload = response.data?.data || response.data
+
+      const u = payload?.user ?? {}
+
+      if (payload?.isNewUser) {
+        // New user — only mobile is available; go to Step 1 to complete profile
+        navigate('/book/details', {
+          state: { mobile: u.mobile ?? mobile },
+        })
+        return
+      }
+
+      // Existing user — full profile in response; save session then skip Step 1
+      if (payload?.token) {
+        loginUser({ token: payload.token, user: u })
+      }
+
+      navigate('/book/station', {
+        state: {
+          userDetails: {
+            name: u.fullName ?? '',
+            mobile: u.mobile ? `+91 ${u.mobile}` : `+91 ${mobile}`,
+            carModel: u.carModel ?? '',
+            carNumber: u.registrationNumber ?? '',
+          },
+        },
+      })
+    } catch (error) {
+      setErrors([getErrorMessage(error, 'OTP verification failed')])
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const handleResendOtp = () => {
-    setResent(true)
-    setDemoOtp(generateOtp())
-    setOtp('')
-    setErrors([])
+  const handleResendOtp = async () => {
+    setSubmitting(true)
+    try {
+      await userApi.sendOtp(mobile)
+      setResent(true)
+      setOtp('')
+      setErrors([])
+    } catch (error) {
+      setErrors([getErrorMessage(error, 'Failed to resend OTP')])
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleChangeNumber = () => {
@@ -106,9 +154,10 @@ const Login = () => {
               </div>
               <button
                 type="submit"
+                disabled={submitting}
                 className="btn-green w-full mt-6 rounded-xl py-3 text-white text-sm font-semibold flex items-center justify-center gap-2"
               >
-                Send OTP
+                {submitting ? 'Sending...' : 'Send OTP'}
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                   <path d="M3 8h10M9 4l4 4-4 4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
@@ -137,7 +186,7 @@ const Login = () => {
                 <path d="M7 5v3M7 9.5v.3" stroke="#16a34a" strokeWidth="1.2" strokeLinecap="round" />
               </svg>
               <p className="info-text text-xs mono">
-                Demo mode — your OTP is <strong>{demoOtp}</strong>
+                Demo mode — use OTP <strong>123456</strong>
               </p>
             </div>
 
@@ -161,9 +210,10 @@ const Login = () => {
               </div>
               <button
                 type="submit"
+                disabled={submitting}
                 className="btn-green w-full mt-6 rounded-xl py-3 text-white text-sm font-semibold flex items-center justify-center gap-2"
               >
-                Verify &amp; continue
+                {submitting ? 'Verifying...' : 'Verify & continue'}
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                   <path d="M3 8h10M9 4l4 4-4 4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>

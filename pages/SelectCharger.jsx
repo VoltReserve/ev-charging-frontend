@@ -1,7 +1,8 @@
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import BookingLayout from '../layout/BookingLayout'
-import { isChargerSelectable, getBookingWindowNote } from '../data/evNetwork'
 import { useNetwork } from '../src/context/NetworkContext'
 
 const GunIcon = ({ type }) => {
@@ -21,26 +22,40 @@ const GunIcon = ({ type }) => {
   )
 }
 
+const isChargerSelectable = (charger) => charger.status === 'Available'
+const getBookingWindowNote = (type) =>
+  type === 'DC' ? '⚡ DC fast charger — 2.5 hour booking window' : '🔌 AC charger — 4 hour booking window'
+
 const SelectCharger = () => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { getStation, getChargersForStation } = useNetwork()
+  const { getStation, getChargersForStation, loadChargersForStation, loading: networkLoading } = useNetwork()
   const { userDetails, stationId } = location.state ?? {}
+
+  const [selectedId, setSelectedId] = useState(location.state?.chargerId ?? '')
+  const [error, setError] = useState('')
+  const [loadingChargers, setLoadingChargers] = useState(false)
 
   const station = getStation(stationId)
   const chargers = getChargersForStation(stationId)
   const selectableChargers = chargers.filter(isChargerSelectable)
-
-  const [selectedId, setSelectedId] = useState(location.state?.chargerId ?? '')
-  const [error, setError] = useState('')
-
   const selectedCharger = chargers.find((c) => c.id === selectedId)
 
   useEffect(() => {
-    if (!stationId || !station) {
+    // Only redirect once the network data has finished loading and station is still not found
+    if (!stationId || (!networkLoading && !station)) {
       navigate('/book/station', { replace: true, state: { userDetails } })
     }
-  }, [stationId, station, navigate, userDetails])
+  }, [stationId, station, networkLoading, navigate, userDetails])
+
+  useEffect(() => {
+    if (!stationId) return
+    setLoadingChargers(true)
+    loadChargersForStation(stationId).finally(() => setLoadingChargers(false))
+  }, [stationId])
+
+  // Show nothing while the initial station list is still being fetched
+  if (networkLoading && !station) return null
 
   if (!station) return null
 
@@ -76,7 +91,8 @@ const SelectCharger = () => {
         )}
 
         <div className="space-y-2 mb-6">
-          {chargers.length === 0 && (
+          {loadingChargers && <p className="text-gray-500 text-sm text-center py-4">Loading chargers...</p>}
+          {!loadingChargers && chargers.length === 0 && (
             <p className="text-gray-500 text-sm text-center py-4">No chargers at this station.</p>
           )}
 
@@ -91,9 +107,7 @@ const SelectCharger = () => {
                     <GunIcon type={charger.type} />
                     <div className="flex-1">
                       <p className="text-gray-900 text-sm font-semibold">{charger.name}</p>
-                      <p className="text-gray-500 text-xs mt-0.5">
-                        {charger.connector} · {charger.power}
-                      </p>
+                      <p className="text-gray-500 text-xs mt-0.5">{charger.power}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className={`mono text-xs px-2 py-1 rounded-lg ${charger.type === 'DC' ? 'tag-dc' : 'tag-ac'}`}>
@@ -126,9 +140,7 @@ const SelectCharger = () => {
                   <GunIcon type={charger.type} />
                   <div className="flex-1">
                     <p className="text-gray-900 text-sm font-semibold">{charger.name}</p>
-                    <p className="text-gray-500 text-xs mt-0.5">
-                      {charger.connector} · {charger.power}
-                    </p>
+                    <p className="text-gray-500 text-xs mt-0.5">{charger.power}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`mono text-xs px-2 py-1 rounded-lg ${charger.type === 'DC' ? 'tag-dc' : 'tag-ac'}`}>
