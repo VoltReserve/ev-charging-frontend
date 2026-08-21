@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:7000'
+const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:7000').replace(/\/$/, '')
 const SESSION_KEY = 'ev-auth-session-v1'
 
 const getSession = () => {
