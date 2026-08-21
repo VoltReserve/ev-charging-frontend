@@ -13,6 +13,7 @@ import {
   toDateStr,
 } from '../utils/schedule'
 import { getErrorMessage } from '../src/lib/api'
+import { SkeletonCard, SkeletonForm, SkeletonList } from '../components/ui/skeleton-blocks'
 
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
 
@@ -81,7 +82,11 @@ const SelectSchedule = () => {
 
   if (!charger) return (
     <BookingLayout currentStep={4} wide>
-      <p className="text-gray-500 text-sm text-center py-10">Loading charger details...</p>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <SkeletonCard />
+        <SkeletonForm fields={4} />
+        <SkeletonCard />
+      </div>
     </BookingLayout>
   )
 
@@ -140,7 +145,7 @@ const SelectSchedule = () => {
           <circle cx="7" cy="7" r="6" stroke="#16a34a" strokeWidth="1.2" />
           <path d="M7 5v3M7 9.5v.3" stroke="#16a34a" strokeWidth="1.2" strokeLinecap="round" />
         </svg>
-        <p className="info-text text-xs mono">{getScheduleInfoBanner(charger.type)}</p>
+        <p className="info-text text-xs mono">{getScheduleInfoBanner(charger)}</p>
       </div>
 
       <form onSubmit={handleSubmit}>
@@ -209,9 +214,7 @@ const SelectSchedule = () => {
               {!selectedDate && (
                 <p className="text-gray-500 text-xs leading-relaxed">Choose a day on the calendar.</p>
               )}
-              {selectedDate && loadingSlots && (
-                <p className="text-gray-500 text-xs leading-relaxed">Loading open slots...</p>
-              )}
+              {selectedDate && loadingSlots && <SkeletonList rows={4} />}
               {selectedDate && !loadingSlots && visibleSlots.length === 0 && (
                 <p className="text-gray-500 text-xs leading-relaxed">
                   No open slots — fully booked for this charger.

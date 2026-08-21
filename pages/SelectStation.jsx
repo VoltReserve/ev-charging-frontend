@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import BookingLayout from '../layout/BookingLayout'
 import { useAuth } from '../src/context/AuthContext'
 import { useNetwork } from '../src/context/NetworkContext'
+import { SkeletonList } from '../components/ui/skeleton-blocks'
 
 const StatusBadge = ({ status }) => {
   if (status === 'Active') {
@@ -47,7 +48,7 @@ const SelectStation = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const { isUser } = useAuth()
-  const { stations, loading: networkLoading } = useNetwork()
+  const { network, loading: networkLoading } = useNetwork()
   const userDetails = location.state?.userDetails
 
   const [selectedId, setSelectedId] = useState(location.state?.stationId ?? '')
@@ -55,7 +56,7 @@ const SelectStation = () => {
 
   const isStationSelectable = (station) => station.status === 'Active'
   const getStationSubtitle = (station) => {
-    const count = station.guns ?? 0
+    const count = station.guns || station.chargers?.length || 0
     return `${count} charger${count === 1 ? '' : 's'}`
   }
 
@@ -93,13 +94,11 @@ const SelectStation = () => {
         )}
 
         <div className="space-y-3 mb-6">
-          {networkLoading && stations.length === 0 && (
-            <p className="text-gray-500 text-sm text-center py-6">Loading stations...</p>
-          )}
-          {!networkLoading && stations.length === 0 && (
+          {networkLoading && network.length === 0 && <SkeletonList rows={4} />}
+          {!networkLoading && network.length === 0 && (
             <p className="text-gray-500 text-sm text-center py-6">No stations available.</p>
           )}
-          {stations.map((station) => {
+          {network.map((station) => {
             const selectable = isStationSelectable(station)
             const isSelected = selectedId === station.id
 

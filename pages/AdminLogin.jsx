@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import PageShell from '../layout/PageShell'
 import { useAuth } from '../src/context/AuthContext'
@@ -6,11 +6,15 @@ import { adminApi, getErrorMessage } from '../src/lib/api'
 
 const AdminLogin = () => {
   const navigate = useNavigate()
-  const { loginAdmin } = useAuth()
+  const { loginAdmin, logout } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    logout()
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()

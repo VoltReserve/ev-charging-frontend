@@ -2,7 +2,31 @@ export const DAY_START_MINS = 6 * 60
 export const DAY_END_MINS = 22 * 60
 export const SLOT_INTERVAL = 30
 
-export const getWindowMins = (type) => (type === 'DC' ? 150 : 240)
+export const getWindowMins = (type, slotDuration) => {
+  const duration = Number(slotDuration)
+  if (Number.isFinite(duration) && duration > 0) return duration
+  return type === 'DC' ? 150 : 240
+}
+
+export const formatSlotDuration = (mins) => {
+  const duration = Number(mins)
+  if (!Number.isFinite(duration) || duration < 1) return ''
+
+  const hours = Math.floor(duration / 60)
+  const minutes = duration % 60
+  const parts = []
+  if (hours) parts.push(`${hours} hour${hours === 1 ? '' : 's'}`)
+  if (minutes) parts.push(`${minutes} minute${minutes === 1 ? '' : 's'}`)
+  return parts.join(' ')
+}
+
+export const getBookingWindowNote = (charger) => {
+  const type = charger?.type || charger?.chargerType || 'AC'
+  const mins = getWindowMins(type, charger?.slotDuration)
+  const duration = formatSlotDuration(mins)
+  const icon = type === 'DC' ? '⚡' : '🔌'
+  return `${icon} ${type} charger — ${duration} booking window`
+}
 
 export const toDateStr = (date) => {
   const y = date.getFullYear()
@@ -63,12 +87,12 @@ export const getAvailableSlots = (booked, windowMins) => {
   return slots
 }
 
-export const getScheduleInfoBanner = (type) => {
-  const label =
-    type === 'DC'
-      ? '⚡ DC fast charger — 2.5 hour window'
-      : '🔌 AC charger — 4 hour window'
-  return `${label} · Slots are back-to-back; booked times are skipped`
+export const getScheduleInfoBanner = (charger) => {
+  const type = charger?.type || charger?.chargerType || 'AC'
+  const mins = getWindowMins(type, charger?.slotDuration)
+  const duration = formatSlotDuration(mins)
+  const icon = type === 'DC' ? '⚡' : '🔌'
+  return `${icon} ${type} charger — ${duration} window · Slots are back-to-back; booked times are skipped`
 }
 
 export const formatDayLabel = (dateStr) => {

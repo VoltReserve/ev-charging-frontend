@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { setAuthToken } from '../lib/api'
 
 const STORAGE_KEY = 'ev-auth-session-v1'
@@ -27,6 +27,22 @@ export const AuthProvider = ({ children }) => {
     }
   }, [session])
 
+  const loginUser = useCallback(({ token, user }) => {
+    setSession({ token, user, role: 'user' })
+  }, [])
+
+  const loginAdmin = useCallback(({ token, admin }) => {
+    setSession({ token, admin, role: 'admin' })
+  }, [])
+
+  const updateUser = useCallback((updatedUser) => {
+    setSession((prev) => (prev ? { ...prev, user: { ...prev.user, ...updatedUser } } : prev))
+  }, [])
+
+  const logout = useCallback(() => {
+    setSession(null)
+  }, [])
+
   const value = useMemo(
     () => ({
       session,
@@ -36,13 +52,12 @@ export const AuthProvider = ({ children }) => {
       admin: session?.admin ?? null,
       isUser: session?.role === 'user',
       isAdmin: session?.role === 'admin',
-      loginUser: ({ token, user }) => setSession({ token, user, role: 'user' }),
-      loginAdmin: ({ token, admin }) => setSession({ token, admin, role: 'admin' }),
-      updateUser: (updatedUser) =>
-        setSession((prev) => prev ? { ...prev, user: { ...prev.user, ...updatedUser } } : prev),
-      logout: () => setSession(null),
+      loginUser,
+      loginAdmin,
+      updateUser,
+      logout,
     }),
-    [session],
+    [session, loginUser, loginAdmin, updateUser, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import BookingLayout from '../layout/BookingLayout'
 import { useNetwork } from '../src/context/NetworkContext'
+import { SkeletonList } from '../components/ui/skeleton-blocks'
+import { formatSlotDuration, getBookingWindowNote } from '../utils/schedule'
 
 const GunIcon = ({ type }) => {
   const isDc = type === 'DC'
@@ -23,8 +25,6 @@ const GunIcon = ({ type }) => {
 }
 
 const isChargerSelectable = (charger) => charger.status === 'Available'
-const getBookingWindowNote = (type) =>
-  type === 'DC' ? '⚡ DC fast charger — 2.5 hour booking window' : '🔌 AC charger — 4 hour booking window'
 
 const SelectCharger = () => {
   const navigate = useNavigate()
@@ -55,7 +55,13 @@ const SelectCharger = () => {
   }, [stationId])
 
   // Show nothing while the initial station list is still being fetched
-  if (networkLoading && !station) return null
+  if (networkLoading && !station) {
+    return (
+      <BookingLayout currentStep={3}>
+        <SkeletonList rows={4} />
+      </BookingLayout>
+    )
+  }
 
   if (!station) return null
 
@@ -91,12 +97,12 @@ const SelectCharger = () => {
         )}
 
         <div className="space-y-2 mb-6">
-          {loadingChargers && <p className="text-gray-500 text-sm text-center py-4">Loading chargers...</p>}
+          {loadingChargers && <SkeletonList rows={3} />}
           {!loadingChargers && chargers.length === 0 && (
             <p className="text-gray-500 text-sm text-center py-4">No chargers at this station.</p>
           )}
 
-          {chargers.map((charger) => {
+          {!loadingChargers && chargers.map((charger) => {
             const selectable = isChargerSelectable(charger)
             const isSelected = selectedId === charger.id
 
@@ -107,7 +113,10 @@ const SelectCharger = () => {
                     <GunIcon type={charger.type} />
                     <div className="flex-1">
                       <p className="text-gray-900 text-sm font-semibold">{charger.name}</p>
-                      <p className="text-gray-500 text-xs mt-0.5">{charger.power}</p>
+                      <p className="text-gray-500 text-xs mt-0.5">
+                        {charger.power}
+                        {charger.slotDuration ? ` · ${formatSlotDuration(charger.slotDuration)}` : ''}
+                      </p>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className={`mono text-xs px-2 py-1 rounded-lg ${charger.type === 'DC' ? 'tag-dc' : 'tag-ac'}`}>
@@ -140,7 +149,10 @@ const SelectCharger = () => {
                   <GunIcon type={charger.type} />
                   <div className="flex-1">
                     <p className="text-gray-900 text-sm font-semibold">{charger.name}</p>
-                    <p className="text-gray-500 text-xs mt-0.5">{charger.power}</p>
+                    <p className="text-gray-500 text-xs mt-0.5">
+                      {charger.power}
+                      {charger.slotDuration ? ` · ${formatSlotDuration(charger.slotDuration)}` : ''}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`mono text-xs px-2 py-1 rounded-lg ${charger.type === 'DC' ? 'tag-dc' : 'tag-ac'}`}>
@@ -157,7 +169,7 @@ const SelectCharger = () => {
         {selectedCharger && (
           <div className="rounded-xl info-box p-3 mb-5">
             <p className="info-text text-xs mono">
-              {getBookingWindowNote(selectedCharger.type)}
+              {getBookingWindowNote(selectedCharger)}
             </p>
           </div>
         )}

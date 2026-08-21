@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNetwork } from '../../src/context/NetworkContext'
 import { adminApi, getErrorMessage } from '../../src/lib/api'
 import Modal from './Modal'
+import { SkeletonList } from '../ui/skeleton-blocks'
 
 const STATION_STATUSES = ['Active', 'Inactive']
 const CHARGER_STATUSES = ['Available', 'Busy', 'Maintenance', 'Not Working']
@@ -179,9 +180,7 @@ const StationManager = () => {
       </div>
 
       {loadError && <p className="err-text text-sm mb-4">{loadError}</p>}
-      {loading && network.length === 0 && (
-        <p className="text-gray-400 text-sm text-center py-8">Loading stations...</p>
-      )}
+      {loading && network.length === 0 && <SkeletonList rows={4} />}
       {!loading && network.length === 0 && (
         <p className="text-gray-400 text-sm text-center py-8">No stations yet. Add one to get started.</p>
       )}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PageShell from '../layout/PageShell'
 import { useAuth } from '../src/context/AuthContext'
@@ -6,8 +6,13 @@ import { getErrorMessage, userApi } from '../src/lib/api'
 
 const Login = () => {
   const navigate = useNavigate()
-  const { loginUser } = useAuth()
+  const { loginUser, logout } = useAuth()
   const [step, setStep] = useState(1)
+
+  useEffect(() => {
+    logout()
+  }, [])
+
   const [mobile, setMobile] = useState('')
   const [otp, setOtp] = useState('')
   const [errors, setErrors] = useState([])

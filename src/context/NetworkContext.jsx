@@ -20,7 +20,7 @@ export const NetworkProvider = ({ children }) => {
     id: String(station._id || station.id || ''),
     name: station.stationName || station.name || 'Unnamed station',
     status: station.status || 'Inactive',
-    guns: station.chargersCount ?? station.guns ?? 0,
+    guns: Number(station.chargersCount ?? station.guns ?? station.chargers?.length ?? 0),
     chargers: station.chargers ?? [],
   })
 
@@ -75,6 +75,7 @@ export const NetworkProvider = ({ children }) => {
         id: station.id,
         name: station.name,
         status: station.status,
+        guns: station.guns || chargersByStation[station.id]?.length || 0,
         chargers:
           chargersByStation[station.id]?.map((charger) => ({
             id: charger.id,
@@ -93,7 +94,31 @@ export const NetworkProvider = ({ children }) => {
   const refreshPublicStations = async () => {
     const response = await userApi.getStations()
     const rows = unwrapList(response.data, ['stations'])
-    setStations(rows.map(normalizeStation))
+    const normalized = rows.map(normalizeStation)
+
+    const grouped = {}
+    await Promise.all(
+      normalized.map(async (station) => {
+        if (station.status !== 'Active') {
+          grouped[station.id] = []
+          return
+        }
+        try {
+          const chargerRes = await userApi.getChargersByStation(station.id)
+          grouped[station.id] = unwrapList(chargerRes.data, ['chargers']).map(normalizeCharger)
+        } catch {
+          grouped[station.id] = []
+        }
+      }),
+    )
+
+    setChargersByStation((prev) => ({ ...prev, ...grouped }))
+    setStations(
+      normalized.map((station) => ({
+        ...station,
+        guns: station.guns || grouped[station.id]?.length || 0,
+      })),
+    )
     return rows
   }
 

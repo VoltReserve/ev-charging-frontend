@@ -9,6 +9,7 @@ import BookingSuccess from '../pages/BookingSuccess.jsx'
 import AdminLayout from '../layout/AdminLayout.jsx'
 import Dashboard from '../pages/admin/Dashboard.jsx'
 import Network from '../pages/admin/Network.jsx'
+import Users from '../pages/admin/Users.jsx'
 import Bookings from '../pages/admin/Bookings.jsx'
 import Reports from '../pages/admin/Reports.jsx'
 import Settings from '../pages/admin/Settings.jsx'
@@ -44,6 +45,7 @@ function App() {
           <Route path="network" element={<Network />} />
           <Route path="stations" element={<Navigate to="/admin/network" replace />} />
           <Route path="chargers" element={<Navigate to="/admin/network" replace />} />
+          <Route path="users" element={<Users />} />
           <Route path="bookings" element={<Bookings />} />
           <Route path="reports" element={<Reports />} />
           <Route path="settings" element={<Settings />} />

@@ -1,37 +1,30 @@
 import { useLocation, useNavigate } from 'react-router-dom'
+import { SidebarTrigger } from '@/components/ui/sidebar'
 import { useAuth } from '../../src/context/AuthContext'
 
 const TITLES = {
   '/admin': 'Dashboard',
   '/admin/network': 'Stations & Chargers',
+  '/admin/users': 'Users',
   '/admin/bookings': 'Bookings',
   '/admin/reports': 'Reports',
   '/admin/settings': 'Settings',
 }
 
-const Topbar = ({ onMenuOpen }) => {
+const Topbar = () => {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const { admin, logout } = useAuth()
   const title = TITLES[pathname] ?? 'Admin'
 
   return (
-    <header className="admin-topbar px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shrink-0 gap-3">
-      <div className="flex items-center gap-3 min-w-0">
-        <button
-          type="button"
-          onClick={onMenuOpen}
-          className="admin-menu-btn lg:hidden shrink-0"
-          aria-label="Open menu"
-        >
-          <span />
-          <span />
-          <span />
-        </button>
-        <h1 className="text-gray-900 text-base sm:text-lg font-semibold truncate">{title}</h1>
+    <header className="admin-topbar flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <SidebarTrigger />
+        <h1 className="truncate text-base font-semibold text-gray-900 sm:text-lg">{title}</h1>
       </div>
-      <div className="flex items-center gap-3 shrink-0">
-        <span className="hidden sm:inline text-gray-500 text-xs truncate max-w-[160px]">
+      <div className="flex shrink-0 items-center gap-3">
+        <span className="hidden max-w-[160px] truncate text-xs text-gray-500 sm:inline">
           {admin?.email || admin?.name || 'Admin'}
         </span>
         <button
